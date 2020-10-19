@@ -20,12 +20,11 @@ import java.util.concurrent.atomic.{ AtomicBoolean, AtomicReference }
 
 import scala.annotation.{ switch, tailrec }
 import scala.collection.JavaConverters._
-
 import com.github.ghik.silencer.silent
-
 import zio.Fiber.Status
 import zio._
 import zio.internal.FiberContext.FiberRefLocals
+import zio.internal.debugging.{ Debugger, FiberDiagnostics }
 import zio.internal.stacktracer.ZTraceElement
 import zio.internal.tracing.ZIOFn
 
@@ -106,8 +105,10 @@ private[zio] final class FiberContext[E, A](
     }
 
   @noinline
-  private[this] def traceLocation(lambda: AnyRef): ZTraceElement =
-    tracer.traceLocation(unwrap(lambda))
+  private[this] def traceLocation(lambda: AnyRef): ZTraceElement = {
+    val x = tracer.traceLocation(unwrap(lambda))
+    x
+  }
 
   @noinline
   private[this] def addTrace(lambda: AnyRef): Unit =
@@ -313,6 +314,9 @@ private[zio] final class FiberContext[E, A](
               // Fiber does not need to be interrupted, but might need to yield:
               if (opCount == maxOpCount) {
                 evaluateLater(curZio)
+                curZio = null
+              } else if (Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
+                freezeMe(curZio)
                 curZio = null
               } else {
                 // Fiber is neither being interrupted nor needs to yield. Execute
@@ -628,6 +632,13 @@ private[zio] final class FiberContext[E, A](
                     val pop  = ZIO.effectTotal(forkScopeOverride.pop())
 
                     curZio = push.bracket_(pop, zio.zio)
+                  case ZIO.Tags.Break =>
+                    val zio = curZio.asInstanceOf[ZIO.Break]
+                    if (zio.freezeAll)
+                      Debugger.freezeAll()
+                    else
+                      Debugger.freezeFiber(fiberId)
+                    curZio = nextInstr(())
                 }
               }
             } else {
@@ -776,6 +787,11 @@ private[zio] final class FiberContext[E, A](
 
   private[this] def evaluateLater(zio: IO[E, Any]): Unit =
     executor.submitOrThrow(() => evaluateNow(zio))
+
+  private[this] def freezeMe(zio: IO[E, Any]): Unit =
+    Debugger.freezeEvaluation(
+      FiberDiagnostics(fiberId, zio, stack, stackTrace, execTrace, () => evaluateLater(zio))
+    )
 
   private[this] def resumeAsync(epoch: Long): IO[E, Any] => Unit = { zio => if (exitAsync(epoch)) evaluateLater(zio) }
 

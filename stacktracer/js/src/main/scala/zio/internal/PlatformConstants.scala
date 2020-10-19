@@ -17,5 +17,6 @@
 package zio.internal
 
 private[zio] object PlatformConstants {
-  final val tracingSupported = false
+  final val tracingSupported   = false
+  final val debuggingSupported = false
 }

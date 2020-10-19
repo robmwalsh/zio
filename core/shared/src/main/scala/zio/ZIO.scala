@@ -2276,6 +2276,9 @@ object ZIO extends ZIOCompanionPlatformSpecific {
       })
     )
 
+  final def break(all: Boolean): ZIO[Any, Nothing, Unit] =
+    new ZIO.Break(all)
+
   /**
    * Checks the interrupt status, and produces the effect returned by the
    * specified callback.
@@ -4244,6 +4247,7 @@ object ZIO extends ZIOCompanionPlatformSpecific {
     final val SetForkSupervision       = 25
     final val GetForkScope             = 26
     final val OverrideForkScope        = 27
+    final val Break                    = 28
   }
   private[zio] final class FlatMap[R, E, A0, A](val zio: ZIO[R, E, A0], val k: A0 => ZIO[R, E, A])
       extends ZIO[R, E, A] {
@@ -4385,6 +4389,10 @@ object ZIO extends ZIOCompanionPlatformSpecific {
     val forkScope: Option[ZScope[Exit[Any, Any]]]
   ) extends ZIO[R, E, A] {
     override def tag = Tags.OverrideForkScope
+  }
+
+  private[zio] final class Break(val freezeAll: Boolean) extends ZIO[Any, Nothing, Unit] {
+    override def tag = Tags.Break
   }
 
   private[zio] def succeedNow[A](a: A): UIO[A] = new ZIO.Succeed(a)
