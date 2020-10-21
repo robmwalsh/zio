@@ -10,10 +10,11 @@ object MyApp extends zio.App {
 
   val myAppLogic =
     for {
-      _    <- break(true)
-      _    <- putStrLn("Hello! What is your name?")
-      _    <- break(true)
-      name <- getStrLn
-      _    <- putStrLn(s"Hello! $name")
-    } yield ()
+      _        <- break(true)
+      _        <- putStrLn("Hello! What is your name?")
+      name     <- getStrLn
+      _        <- putStrLn(s"Hello! $name, how are you?")
+      response <- getStrLn
+      _        <- putStrLn("that's good")
+    } yield (response)
 }

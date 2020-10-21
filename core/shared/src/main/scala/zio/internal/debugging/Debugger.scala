@@ -84,7 +84,7 @@ object Debugger {
               )
           )
       }
-      //traceSources.put(trace, v) todo re-enable caching
+      traceSources.put(trace, v)
       v
     } else {
       res
@@ -126,11 +126,14 @@ object Debugger {
     stepAll()
   }
 
-  private[zio] def stepAll(): Unit =
-    frozenFibers.forEach { (_, diagnostics) =>
-      frozen = true
+  private[zio] def stepAll(): Unit = {
+    frozen = true
+    frozenFibers.forEach { (fiberId, diagnostics) =>
+      frozenFibers.remove(fiberId)
       diagnostics.unfreeze.run()
     }
+
+  }
 
   private[zio] def executionPermitted(fiberId: Fiber.Id): Boolean = permittedFibers.contains(fiberId)
 
