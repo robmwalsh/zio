@@ -7,6 +7,7 @@ import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
 
 import scala.io.{ Source, StdIn }
+import scala.util.Try
 
 object Debugger {
 
@@ -52,29 +53,38 @@ object Debugger {
       val v = trace match {
         case ZTraceElement.NoLocation(_) => trace.prettyPrint
         case ZTraceElement.SourceLocation(sourceFile, clazz, _, from, to) =>
-          val fileName  = sources + clazz.split('.').dropRight(1).mkString("/") + "/" + sourceFile
-          val file      = Source.fromFile(fileName)
-          val fileLines = file.getLines().toList
-          file.close()
-          val zipped    = fileLines.zipWithIndex
-          val start     = from - 3
-          val length    = to - from
-          val lineCount = fileLines.length
+          val fileName = sources + clazz.split('.').dropRight(1).mkString("/") + "/" + sourceFile
+          Try(Source.fromFile(fileName)).fold(
+            _ => s"$sourceFile not found",
+            file =>
+              Try("" :: file.getLines().toList).fold(
+                _ => "something broke",
+                fileLines => {
+                  file.close()
+                  val zipped    = fileLines.zipWithIndex.drop(1)
+                  val start     = from - 3
+                  val length    = to - from
+                  val lineCount = fileLines.length
 
-          val drop = if (from > 3) start else 0
-          val take =
-            if (length > 10) 10
-            else if (length + 3 > lineCount) lineCount - to
-            else length + 6
+                  val drop = if (from > 3) start else 0
+                  val take =
+                    if (length > 10) 10
+                    else if (length + 3 > lineCount) lineCount - to
+                    else length + 6
 
-          val limit = zipped.slice(drop, drop + take)
-          val result = limit.map { case (line, lineNumber) =>
-            s"${lineNumber + 1} ${if (lineNumber + 1 == from) "*" else " "} $line"
-          }
-
-          result.mkString("\n")
+                  val limit = zipped.slice(drop, drop + take)
+                  val result = limit.map { case (rawLine, lineNumber) =>
+                    val line = s"$lineNumber ${if (lineNumber == from) "-> " else "   "} $rawLine"
+                    if (from <= lineNumber && lineNumber <= to)
+                      green(line)
+                    else line
+                  }
+                  result.mkString("\n")
+                }
+              )
+          )
       }
-      traceSources.put(trace, v)
+      //traceSources.put(trace, v) todo re-enable caching
       v
     } else {
       res
@@ -85,24 +95,23 @@ object Debugger {
     override def run: Unit = {
       var done = false
       while (!done) {
-        println(s"What do you want to do?")
+
         StdIn.readLine() match {
-          case "wait" => Thread.sleep(1000)
-          case "list" =>
+          case "l" =>
             frozenFibers.forEach { (_, diagnostics) =>
               println(s"fiberId: ${diagnostics.fiberId} current value: ${diagnostics.value}")
             }
-          case "inspect" =>
+          case "" =>
+            stepAll()
+            Thread.sleep(100)
             frozenFibers.forEach { (_, diagnostics) =>
               println("-------------------------------------------")
               println(s"fiberId      : ${diagnostics.fiberId}")
-              println(s"current value: ${red(diagnostics.value.toString)}")
-              println("next instruction: ")
+              println("instruction   :")
               println(sourceSnippet(diagnostics.kTrace))
+              println(s"result       : ${red(diagnostics.value.toString)}")
               println("-------------------------------------------")
             }
-          case "step" =>
-            stepAll()
           case "exit" =>
             done = true
             unfreezeAll()
@@ -119,6 +128,7 @@ object Debugger {
 
   private[zio] def stepAll(): Unit =
     frozenFibers.forEach { (_, diagnostics) =>
+      frozen = true
       diagnostics.unfreeze.run()
     }
 

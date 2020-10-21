@@ -329,14 +329,14 @@ private[zio] final class FiberContext[E, A](
                     // anything that is 1-hop away. This eliminates heap usage for the
                     // happy path.
                     (nested.tag: @switch) match {
-                      case ZIO.Tags.Succeed =>
+                      case ZIO.Tags.Succeed if !Debugger.debuggingEnabled =>
                         val io2 = nested.asInstanceOf[ZIO.Succeed[Any]]
 
                         if (traceExec && inTracingRegion) addTrace(k)
 
                         curZio = k(io2.value)
 
-                      case ZIO.Tags.EffectTotal =>
+                      case ZIO.Tags.EffectTotal if !Debugger.debuggingEnabled =>
                         val io2    = nested.asInstanceOf[ZIO.EffectTotal[Any]]
                         val effect = io2.effect
 
@@ -351,7 +351,7 @@ private[zio] final class FiberContext[E, A](
 
                         curZio = k(value)
 
-                      case ZIO.Tags.EffectPartial =>
+                      case ZIO.Tags.EffectPartial if !Debugger.debuggingEnabled =>
                         val io2    = nested.asInstanceOf[ZIO.EffectPartial[Any]]
                         val effect = io2.effect
 
@@ -785,7 +785,7 @@ private[zio] final class FiberContext[E, A](
   private[this] def evaluateLater(zio: IO[E, Any]): Unit =
     executor.submitOrThrow(() => evaluateNow(zio))
 
-  private[this] def freeze(value: Any, k: Any => IO[Any, Any]): Unit =
+  private[this] def freeze(value: Any, k: Any => IO[E, Any]): Unit =
     Debugger.freezeEvaluation(
       FiberDiagnostics(
         fiberId,
@@ -936,7 +936,7 @@ private[zio] final class FiberContext[E, A](
       }
 
       if (Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
-        freeze(value, k)
+        freeze(value, k.asInstanceOf[Any => IO[E, Any]])
         null
       } else
         k(value).asInstanceOf[IO[E, Any]]
