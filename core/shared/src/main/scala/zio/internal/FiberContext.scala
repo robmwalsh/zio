@@ -315,9 +315,6 @@ private[zio] final class FiberContext[E, A](
               if (opCount == maxOpCount) {
                 evaluateLater(curZio)
                 curZio = null
-              } else if (Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
-                freezeMe(curZio)
-                curZio = null
               } else {
                 // Fiber is neither being interrupted nor needs to yield. Execute
                 // the next instruction in the program:
@@ -788,14 +785,23 @@ private[zio] final class FiberContext[E, A](
   private[this] def evaluateLater(zio: IO[E, Any]): Unit =
     executor.submitOrThrow(() => evaluateNow(zio))
 
-  private[this] def freezeMe(zio: IO[E, Any]): Unit =
+  private[this] def freeze(value: Any, k: Any => IO[Any, Any]): Unit =
     Debugger.freezeEvaluation(
-      FiberDiagnostics(fiberId, zio, stack, stackTrace, execTrace, () => evaluateLater(zio))
+      FiberDiagnostics(
+        fiberId,
+        value,
+        k,
+        traceLocation(k),
+        stack,
+        stackTrace.toReversedList,
+        execTrace.toReversedList,
+        () => evaluateLater(k(value))
+      )
     )
 
   private[this] def resumeAsync(epoch: Long): IO[E, Any] => Unit = { zio => if (exitAsync(epoch)) evaluateLater(zio) }
 
-  final def interruptAs(fiberId: Fiber.Id): UIO[Exit[E, A]] = kill0(fiberId)
+  def interruptAs(fiberId: Fiber.Id): UIO[Exit[E, A]] = kill0(fiberId)
 
   def await: UIO[Exit[E, A]] =
     ZIO.effectAsyncInterrupt[Any, Nothing, Exit[E, A]](
@@ -898,7 +904,7 @@ private[zio] final class FiberContext[E, A](
   private[this] def isInterrupting(): Boolean = state.get().interrupting
 
   @inline
-  private[this] final def shouldInterrupt(): Boolean =
+  private[this] def shouldInterrupt(): Boolean =
     isInterrupted() && isInterruptible() && !isInterrupting()
 
   @tailrec
@@ -929,7 +935,11 @@ private[zio] final class FiberContext[E, A](
         if (traceStack && (k ne InterruptExit) && (k ne TracingRegionExit)) popStackTrace()
       }
 
-      k(value).asInstanceOf[IO[E, Any]]
+      if (Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
+        freeze(value, k)
+        null
+      } else
+        k(value).asInstanceOf[IO[E, Any]]
     } else done(Exit.succeed(value.asInstanceOf[A]))
 
   @tailrec

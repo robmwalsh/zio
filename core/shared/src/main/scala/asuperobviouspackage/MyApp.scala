@@ -1,7 +1,7 @@
 package asuperobviouspackage
 
 import zio.ZIO.break
-import zio.console.putStrLn
+import zio.console.{ getStrLn, putStrLn }
 
 object MyApp extends zio.App {
 
@@ -10,12 +10,10 @@ object MyApp extends zio.App {
 
   val myAppLogic =
     for {
-      _ <- putStrLn("Hello! What is your name?")
-      _ <- putStrLn("Hello! What is your name?")
-      _ <- putStrLn("Hello! What is your name?")
-      _ <- break(true)
-      _ <- putStrLn("Hello! What is your name?")
-      _ <- putStrLn("Hello! What is your name?")
-      _ <- putStrLn("Hello! What is your name?")
+      _    <- break(true)
+      _    <- putStrLn("Hello! What is your name?")
+      _    <- break(true)
+      name <- getStrLn
+      _    <- putStrLn(s"Hello! $name")
     } yield ()
 }

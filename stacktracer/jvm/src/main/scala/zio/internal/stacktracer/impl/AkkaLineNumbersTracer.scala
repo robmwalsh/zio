@@ -26,7 +26,7 @@ import zio.internal.stacktracer.{ Tracer, ZTraceElement }
  * A [[Tracer]] implementation powered by Akka's `LineNumbers` bytecode parser (shipped with ZIO, no dependency on Akka)
  */
 final class AkkaLineNumbersTracer extends Tracer {
-  final def traceLocation(lambda: AnyRef): ZTraceElement =
+  def traceLocation(lambda: AnyRef): ZTraceElement =
     AkkaLineNumbers(lambda) match {
       case AkkaLineNumbers.NoSourceInfo =>
         NoLocation(s"couldn't find class file for lambda:$lambda")
@@ -35,16 +35,16 @@ final class AkkaLineNumbersTracer extends Tracer {
         NoLocation(s"couldn't parse class file for lambda:$lambda, error: $explanation")
 
       case AkkaLineNumbers.SourceFile(filename) =>
-        SourceLocation(filename, "<unknown>", "<unknown>", 0)
+        SourceLocation(filename, "<unknown>", "<unknown>", 0, 0)
 
-      case AkkaLineNumbers.SourceFileLines(filename, from, _, classNameSlashes, methodAnonfun) =>
+      case AkkaLineNumbers.SourceFileLines(filename, from, to, classNameSlashes, methodAnonfun) =>
         val className = classNameSlashes.replace('/', '.')
         val methodName = lambdaNamePattern
           .findFirstMatchIn(methodAnonfun)
           .flatMap(Option apply _.group(1))
           .getOrElse(methodAnonfun)
 
-        SourceLocation(filename.intern(), className.intern(), methodName.intern(), from)
+        SourceLocation(filename.intern(), className.intern(), methodName.intern(), from, to)
     }
 
 }

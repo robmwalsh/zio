@@ -1,14 +1,16 @@
 package zio.internal.debugging
 
 import zio.{ Fiber, IO }
-import zio.internal.{ SingleThreadedRingBuffer, Stack }
+import zio.internal.Stack
 import zio.internal.stacktracer.ZTraceElement
 
-case class FiberDiagnostics(
+case class FiberDiagnostics private[zio] (
   fiberId: Fiber.Id,
-  curZio: IO[Any, Any],
+  value: Any,
+  k: Any => IO[Any, Any],
+  kTrace: ZTraceElement,
   stack: Stack[Any => IO[Any, Any]],
-  stackTrace: SingleThreadedRingBuffer[ZTraceElement],
-  execTrace: SingleThreadedRingBuffer[ZTraceElement],
-  continuation: Runnable // run to unfreeze fiber
+  stackTrace: List[ZTraceElement],
+  execTrace: List[ZTraceElement],
+  private[zio] val unfreeze: Runnable
 )
