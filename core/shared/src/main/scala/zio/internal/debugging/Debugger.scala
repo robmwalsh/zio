@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
 
+import scala.collection.mutable.ListBuffer
 import scala.io.{ Source, StdIn }
 import scala.util.Try
 
@@ -13,16 +14,19 @@ object Debugger {
 
   lazy val debuggingEnabled: Boolean = true
 
+  @volatile
+  private var debuggerRunning = false
+
   //flag if all fibers should freeze
   @volatile
   private[this] var frozen: Boolean = false
 
-  private[this] type FiberSet     = ConcurrentHashMap.KeySetView[Fiber.Id, lang.Boolean]
-  private[this] type FrozenFibers = ConcurrentHashMap[Fiber.Id, FiberDiagnostics]
+  private[this] type FiberSet     = ConcurrentHashMap.KeySetView[Long, lang.Boolean]
+  private[this] type FrozenFibers = ConcurrentHashMap[Long, FiberDiagnostics]
   private[this] type TraceSources = ConcurrentHashMap[ZTraceElement, String]
 
   //fibers that must freeze
-  private[this] lazy val freezeFibers: FiberSet = ConcurrentHashMap.newKeySet[Fiber.Id](100)
+  private[this] lazy val freezeFibers: FiberSet = ConcurrentHashMap.newKeySet[Long](100)
 
   //trace sources
   private[this] lazy val traceSources: TraceSources = new TraceSources(10)
@@ -32,7 +36,7 @@ object Debugger {
   private[this] lazy val frozenFibers: FrozenFibers = new FrozenFibers(10)
 
   //fibers that can run when debugger has frozen
-  private[this] lazy val permittedFibers: FiberSet = ConcurrentHashMap.newKeySet[Fiber.Id](100)
+  private[this] lazy val permittedFibers: FiberSet = ConcurrentHashMap.newKeySet[Long](100)
 
   private[zio] def isFrozen: Boolean = frozen
 
@@ -46,6 +50,16 @@ object Debugger {
   def colored(code: String)(str: String): String = s"$code$str${Console.RESET}"
   lazy val red: String => String                 = colored(Console.RED)
   lazy val green: String => String               = colored(Console.GREEN)
+  lazy val yellow: String => String              = colored(Console.YELLOW)
+
+  def exactlyN(string: String, n: Int): String = {
+    val first   = string.linesIterator.next()
+    val trimmed = first.substring(0, Math.min(first.length(), n))
+    val delta   = n - trimmed.length
+    val padding = " " * delta
+    val x       = trimmed + padding
+    x
+  }
 
   private def sourceSnippet(trace: ZTraceElement): String = {
     val res = traceSources.get(trace)
@@ -91,39 +105,99 @@ object Debugger {
     }
   }
 
-  private def debugLoop() = new Thread {
-    override def run: Unit = {
-      var done = false
-      while (!done) {
+  sealed trait Mode
+  object Mode {
+    final case object Overview        extends Mode
+    sealed case class Fiber(id: Long) extends Mode
+  }
+  private var mode: Mode = Mode.Overview
 
-        StdIn.readLine() match {
-          case "l" =>
-            frozenFibers.forEach { (_, diagnostics) =>
-              println(s"fiberId: ${diagnostics.fiberId} current value: ${diagnostics.value}")
+  //todo make sure this is only running on one thread
+
+  private val nls = "\n" * 50
+  private def flush(): Unit =
+    println(nls)
+
+  private def debugLoop() =
+    if (!debuggerRunning) {
+      new Thread {
+        override def run: Unit = {
+          var done = false
+          while (!done) {
+            mode match {
+              case Mode.Overview =>
+                val list = new ListBuffer[FiberDiagnostics]()
+                frozenFibers.forEach { (_, diagnostics) =>
+                  val _ = list += diagnostics
+                }
+                flush()
+                list
+                  .sortBy(_.fiberId.seqNumber)
+                  .foreach { diagnostic =>
+                    println(
+                      s"Id:${diagnostic.fiberId.startTimeMillis},${yellow(exactlyN(diagnostic.fiberId.seqNumber.toString, 7))} v: ${red(
+                        exactlyN(diagnostic.value.toString, 10)
+                      )} ${green(diagnostic.kTrace match {
+                        case ZTraceElement.NoLocation(error)                   => error
+                        case ZTraceElement.SourceLocation(file, _, _, from, _) => s"($file:$from)"
+                      })}"
+                    )
+                  }
+              case Mode.Fiber(id) =>
+                val diagnostics: FiberDiagnostics = frozenFibers.get(id)
+                if (diagnostics != null) {
+                  printDetail(diagnostics)
+                } else {
+                  flush()
+                  println("lost fiber, reverting to overview")
+                  Thread.sleep(500)
+                  mode = Mode.Overview
+                }
             }
-          case "" =>
-            stepAll()
-            Thread.sleep(100)
-            frozenFibers.forEach { (_, diagnostics) =>
-              println("-------------------------------------------")
-              println(s"fiberId      : ${diagnostics.fiberId}")
-              println("instruction   :")
-              println(sourceSnippet(diagnostics.kTrace))
-              println(s"result       : ${red(diagnostics.value.toString)}")
-              println("-------------------------------------------")
+            StdIn.readLine() match {
+              case "o" =>
+                mode = Mode.Overview
+              case "" =>
+                mode match {
+                  case Mode.Overview  => stepAll()
+                  case Mode.Fiber(id) => stepFiber(id)
+                }
+                Thread.sleep(100)
+              case "exit" =>
+                done = true
+                unfreezeAll()
+              case maybeId =>
+                Try(maybeId.toLong).map { id =>
+                  mode = Mode.Fiber(id)
+                  ()
+                }
             }
-          case "exit" =>
-            done = true
-            unfreezeAll()
-          case _ =>
+          }
+          debuggerRunning = false
         }
-      }
+      }.start()
     }
-  }.start()
+
+  private def printDetail(diagnostics: FiberDiagnostics) = {
+    val value = red(exactlyN(diagnostics.value.toString, 100))
+    flush()
+    println(s"fiberId         : ${diagnostics.fiberId}")
+    println(s"value           : ${value}")
+    println(s"location        : ${green(diagnostics.kTrace.prettyPrint)}")
+    println(sourceSnippet(diagnostics.kTrace))
+  }
 
   private[zio] def unfreezeAll(): Unit = {
     frozen = false
     stepAll()
+  }
+
+  private[zio] def stepFiber(id: Long): Unit = {
+    val diagnostics = frozenFibers.get(id)
+    if (diagnostics != null) {
+      frozenFibers.remove(id)
+      diagnostics.unfreeze.run()
+    }
   }
 
   private[zio] def stepAll(): Unit = {
@@ -132,7 +206,6 @@ object Debugger {
       frozenFibers.remove(fiberId)
       diagnostics.unfreeze.run()
     }
-
   }
 
   private[zio] def executionPermitted(fiberId: Fiber.Id): Boolean = permittedFibers.contains(fiberId)
@@ -140,12 +213,12 @@ object Debugger {
   private[zio] def freezeFiber(fiberId: Fiber.Id): Unit = {
     debugLoop()
     permittedFibers.remove(fiberId)
-    val _ = freezeFibers.add(fiberId)
+    val _ = freezeFibers.add(fiberId.seqNumber)
   }
 
   private[zio] def freezeEvaluation(diagnostics: FiberDiagnostics): Unit = {
-    frozenFibers.put(diagnostics.fiberId, diagnostics)
-    val _ = freezeFibers.remove(diagnostics.fiberId)
+    frozenFibers.put(diagnostics.fiberId.seqNumber, diagnostics)
+    val _ = freezeFibers.remove(diagnostics.fiberId.seqNumber)
   }
 
 }
