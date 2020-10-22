@@ -29,9 +29,9 @@ object Debugger {
   private[this] lazy val freezeFibers: FiberSet = ConcurrentHashMap.newKeySet[Long](100)
 
   //trace sources
-  private[this] lazy val traceSources: TraceSources = new TraceSources(10)
+  private[this] lazy val traceSourceSnippets: TraceSources = new TraceSources(10)
+  private[this] lazy val traceSourceLines: TraceSources    = new TraceSources(10)
 
-  val _ = traceSources
   //fibers that have been frozen
   private[this] lazy val frozenFibers: FrozenFibers = new FrozenFibers(10)
 
@@ -52,17 +52,27 @@ object Debugger {
   lazy val green: String => String               = colored(Console.GREEN)
   lazy val yellow: String => String              = colored(Console.YELLOW)
 
-  def exactlyN(string: String, n: Int): String = {
-    val first   = string.linesIterator.next()
-    val trimmed = first.substring(0, Math.min(first.length(), n))
-    val delta   = n - trimmed.length
-    val padding = " " * delta
-    val x       = trimmed + padding
-    x
-  }
+  def exactlyN(string: String, n: Int): String =
+    if (!string.isEmpty) {
+      val first   = string.linesIterator.next()
+      val trimmed = first.substring(0, Math.min(first.length(), n))
+      val delta   = n - trimmed.length
+      val padding = " " * delta
+      trimmed + padding
+    } else " " * n
 
+  private def sourceLine(trace: ZTraceElement): String = {
+    val res = traceSourceLines.get(trace)
+    if (res eq null) {
+      val _    = sourceSnippet(trace)
+      val res2 = traceSourceLines.get(trace)
+      if (res2 eq null) "something broke" else res2
+    } else
+      res
+
+  }
   private def sourceSnippet(trace: ZTraceElement): String = {
-    val res = traceSources.get(trace)
+    val res = traceSourceSnippets.get(trace)
     if (res eq null) {
       val v = trace match {
         case ZTraceElement.NoLocation(_) => trace.prettyPrint
@@ -89,6 +99,7 @@ object Debugger {
                   val limit = zipped.slice(drop, drop + take)
                   val result = limit.map { case (rawLine, lineNumber) =>
                     val line = s"$lineNumber ${if (lineNumber == from) "-> " else "   "} $rawLine"
+                    if (lineNumber == from) traceSourceLines.put(trace, rawLine.trim)
                     if (from <= lineNumber && lineNumber <= to)
                       green(line)
                     else line
@@ -98,7 +109,7 @@ object Debugger {
               )
           )
       }
-      traceSources.put(trace, v)
+      traceSourceSnippets.put(trace, v)
       v
     } else {
       res
@@ -111,8 +122,6 @@ object Debugger {
     sealed case class Fiber(id: Long) extends Mode
   }
   private var mode: Mode = Mode.Overview
-
-  //todo make sure this is only running on one thread
 
   private val nls = "\n" * 50
   private def flush(): Unit =
@@ -134,14 +143,17 @@ object Debugger {
                 list
                   .sortBy(_.fiberId.seqNumber)
                   .foreach { diagnostic =>
-                    println(
-                      s"Id:${diagnostic.fiberId.startTimeMillis},${yellow(exactlyN(diagnostic.fiberId.seqNumber.toString, 7))} v: ${red(
-                        exactlyN(diagnostic.value.toString, 10)
-                      )} ${green(diagnostic.kTrace match {
-                        case ZTraceElement.NoLocation(error)                   => error
-                        case ZTraceElement.SourceLocation(file, _, _, from, _) => s"($file:$from)"
-                      })}"
-                    )
+                    val id =
+                      s"Id:${diagnostic.fiberId.startTimeMillis},${yellow(exactlyN(diagnostic.fiberId.seqNumber.toString, 7))}"
+                    val v = s" v: ${red(
+                      exactlyN(diagnostic.value.toString, 10)
+                    )}"
+                    val source = s"${exactlyN(sourceLine(diagnostic.kTrace), 100)}"
+                    val location = s" ${green(diagnostic.kTrace match {
+                      case ZTraceElement.NoLocation(error)                   => error
+                      case ZTraceElement.SourceLocation(file, _, _, from, _) => s"($file:$from)"
+                    })}"
+                    println(s"$id$v => $source$location")
                   }
               case Mode.Fiber(id) =>
                 val diagnostics: FiberDiagnostics = frozenFibers.get(id)

@@ -935,7 +935,7 @@ private[zio] final class FiberContext[E, A](
         if (traceStack && (k ne InterruptExit) && (k ne TracingRegionExit)) popStackTrace()
       }
 
-      if (Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
+      if (inTracingRegion && Debugger.debuggingEnabled && Debugger.isFrozen && !Debugger.executionPermitted(fiberId)) {
         freeze(value, k.asInstanceOf[Any => IO[E, Any]])
         null
       } else
