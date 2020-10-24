@@ -20,46 +20,48 @@ package zio.internal
  * A very fast, growable/shrinkable, mutable stack.
  */
 private[zio] final class Stack[A <: AnyRef]() {
-  private[this] var array   = new Array[AnyRef](13)
-  private[this] var size    = 0
-  private[this] var nesting = 0
+  private[this] var array     = new Array[AnyRef](13)
+  private[this] var stackSize = 0
+  private[this] var nesting   = 0
 
   /**
    * Determines if the stack is empty.
    */
-  def isEmpty: Boolean = size == 0
+  def isEmpty: Boolean = stackSize == 0
+
+  def size: Int = nesting * 12 + stackSize
 
   /**
    * Pushes an item onto the stack.
    */
   def push(a: A): Unit =
-    if (size == 13) {
+    if (stackSize == 13) {
       array = Array(array, a, null, null, null, null, null, null, null, null, null, null, null)
-      size = 2
+      stackSize = 2
       nesting += 1
     } else {
-      array(size) = a
-      size += 1
+      array(stackSize) = a
+      stackSize += 1
     }
 
   /**
    * Pops an item off the stack, or returns `null` if the stack is empty.
    */
   def pop(): A =
-    if (size <= 0) {
+    if (stackSize <= 0) {
       null.asInstanceOf[A]
     } else {
-      val idx = size - 1
+      val idx = stackSize - 1
       var a   = array(idx)
       if (idx == 0 && nesting > 0) {
         array = a.asInstanceOf[Array[AnyRef]]
         a = array(12)
         array(12) = null // GC
-        size = 12
+        stackSize = 12
         nesting -= 1
       } else {
         array(idx) = null // GC
-        size = idx
+        stackSize = idx
       }
       a.asInstanceOf[A]
     }
@@ -68,16 +70,39 @@ private[zio] final class Stack[A <: AnyRef]() {
    * Peeks the item on the head of the stack, or returns `null` if empty.
    */
   def peek(): A =
-    if (size <= 0) {
+    if (stackSize <= 0) {
       null.asInstanceOf[A]
     } else {
-      val idx = size - 1
+      val idx = stackSize - 1
       var a   = array(idx)
       if (idx == 0 && nesting > 0) a = (a.asInstanceOf[Array[AnyRef]])(12)
       a.asInstanceOf[A]
     }
 
-  def peekOrElse(a: A): A = if (size <= 0) a else peek()
+  private[zio] def peekN(n: Int): List[A] =
+    if (stackSize <= 0) {
+      Nil
+    } else {
+      def loop(arr: Array[AnyRef], n: Int, idx: Int, acc: List[A]): List[A] =
+        if (n == 0)
+          acc
+        else {
+          val entry = arr(idx)
+          if (entry eq null) acc
+          else
+            entry match {
+              case arr: Array[AnyRef] =>
+                loop(arr.asInstanceOf[Array[AnyRef]], n - 1, 11, arr(12).asInstanceOf[A] :: acc)
+              case a: AnyRef =>
+                loop(arr, n - 1, idx - 1, a.asInstanceOf[A] :: acc)
+            }
+        }
+
+      val size2 = size
+      loop(array, Math.min(n, size2), stackSize - 1, Nil)
+    }
+
+  def peekOrElse(a: A): A = if (stackSize <= 0) a else peek()
 }
 
 private[zio] object Stack {

@@ -48,6 +48,7 @@ object Debugger {
   lazy val red: String => String                 = colored(Console.RED)
   lazy val green: String => String               = colored(Console.GREEN)
   lazy val yellow: String => String              = colored(Console.YELLOW)
+  lazy val cyan: String => String                = colored(Console.CYAN)
 
   def exactlyN(string: String, n: Int): String =
     if (!string.isEmpty) {
@@ -88,23 +89,25 @@ object Debugger {
                   .sortBy(_.fiberId.seqNumber)
                   .foreach { diagnostic =>
                     val id =
-                      s"Id:${diagnostic.fiberId.startTimeMillis},${yellow(exactlyN(diagnostic.fiberId.seqNumber.toString, 7))}"
-                    val v = s" v: ${red(
-                      exactlyN(diagnostic.value.toString, 10)
-                    )}"
+                      s"${diagnostic.fiberId.startTimeMillis},${yellow(exactlyN(diagnostic.fiberId.seqNumber.toString, 7))}"
+                    val v = red(exactlyN(diagnostic.value.toString, 10))
                     val source =
-                      s"${exactlyN(
-                        SourceHelper.getTraceSourceHead(diagnostic.kTrace) match {
-                          case Some(line) => line.line.trim
-                          case None       => "source not found"
-                        },
-                        100
-                      )}"
-                    val location = s" ${green(diagnostic.kTrace match {
+                      green(
+                        exactlyN(
+                          SourceHelper.getTraceSourceHead(diagnostic.kTrace) match {
+                            case Some(line) => line.line.trim
+                            case None       => "source not found"
+                          },
+                          100
+                        )
+                      )
+                    val location = green(diagnostic.kTrace match {
                       case ZTraceElement.NoLocation(error)                   => error
                       case ZTraceElement.SourceLocation(file, _, _, from, _) => s"($file:$from)"
-                    })}"
-                    println(s"$id$v => $source$location")
+                    })
+                    val stackSize = cyan(exactlyN(diagnostic.stack.size.toString, 5))
+
+                    println(s"Id:${id}s:${stackSize}v:${v}=>$source$location")
                   }
               case Mode.Fiber(id) =>
                 val diagnostics: FiberDiagnostics = frozenFibers.get(id)
@@ -158,6 +161,10 @@ object Debugger {
     println(s"value           : ${value}")
     println(s"location        : ${green(diagnostics.kTrace.prettyPrint)}")
     println(source)
+
+    val peekStack = diagnostics.stack.peekN(10)
+    val _         = peekStack.length + 2
+    println(peekStack) //todo trace the stack lines
   }
 
   private[zio] def unfreezeAll(): Unit = {
