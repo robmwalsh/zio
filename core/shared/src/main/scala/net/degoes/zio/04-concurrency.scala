@@ -1,8 +1,9 @@
 package net.degoes.zio
 
+import com.github.ghik.silencer.silent
 import zio._
 import zio.internal.debugging.Debugger.BreakType.All
-
+@silent
 object ForkJoin extends App {
   import zio.console._
 
@@ -64,6 +65,8 @@ object ParallelFib extends App {
              "What number of the fibonacci sequence should we calculate?"
            )
       n <- getStrLn.orDie.flatMap(input => ZIO(input.toInt)).eventually
+      _ <- ZIO.break(All)
+      _ <- ZIO.break(All)
       f <- fib(n)
       _ <- putStrLn(s"fib(${n}) = ${f}")
     } yield ExitCode.success
@@ -208,7 +211,7 @@ object StmSwap extends App {
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
     exampleRef.map(_.toString).flatMap(putStrLn(_)).exitCode
 }
-
+@silent
 object StmLock extends App {
   import zio.console._
   import zio.stm._
@@ -241,7 +244,7 @@ object StmLock extends App {
       _ <- (fiber1 zip fiber2).join
     } yield ExitCode.success
 }
-
+@silent
 object StmQueue extends App {
   import zio.console._
   import zio.stm._
@@ -331,7 +334,7 @@ object StmLunchTime extends App {
     val TableSize = 5
 
     for {
-      attendees <- ZIO.foreach(0 to Attendees)(i =>
+      attendees <- ZIO.foreach(0 to Attendees)(_ =>
                      TRef
                        .make[Attendee.State](Attendee.State.Starving)
                        .map(Attendee(_))
@@ -345,7 +348,7 @@ object StmLunchTime extends App {
     } yield ExitCode.success
   }
 }
-
+@silent
 object StmPriorityQueue extends App {
   import zio.console._
   import zio.duration._
@@ -391,6 +394,7 @@ object StmPriorityQueue extends App {
     } yield 0).exitCode
 }
 
+@silent
 object StmReentrantLock extends App {
   import zio.stm._
 
@@ -432,6 +436,7 @@ object StmReentrantLock extends App {
    *
    * Using STM, implement a reentrant read/write lock.
    */
+  @silent
   class ReentrantReadWriteLock(data: TRef[Either[ReadLock, WriteLock]]) {
     def writeLocks: UIO[Int] = ???
 
@@ -452,6 +457,7 @@ object StmReentrantLock extends App {
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] = ???
 }
 
+@silent
 object StmDiningPhilosophers extends App {
   import zio.console._
   import zio.stm._

@@ -13,8 +13,9 @@ import scala.util.Try
 object Debugger {
 
   //todo check debugging is supported and is running (-agentlib:jdwp)
-  lazy val debuggingEnabled: Boolean = true
-
+  @volatile
+  private var debuggingEnabled: Boolean = true
+  private[zio] def isEnabled: Boolean   = debuggingEnabled
   //flag if debugger is active (i.e. something is frozen)
   @volatile
   private var debuggerActive = false
@@ -128,6 +129,10 @@ object Debugger {
               case "exit" =>
                 done = true
                 unfreezeAll()
+              case "disable" =>
+                debuggingEnabled = false
+                unfreezeAll()
+                Thread.sleep(1000)
               case maybeId =>
                 Try(maybeId.toLong).map { id =>
                   mode = Mode.Fiber(id)

@@ -1,9 +1,10 @@
 package net.degoes.zio
 
+import com.github.ghik.silencer.silent
 import zio._
 
 import scala.collection.immutable.Nil
-
+@silent
 object Looping extends App {
   import zio.console._
 
@@ -18,7 +19,7 @@ object Looping extends App {
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
     repeat(100)(putStrLn("All work and no play makes Jack a dull boy")).exitCode
 }
-
+@silent
 object Interview extends App {
   import java.io.IOException
 
@@ -51,7 +52,7 @@ object Interview extends App {
   def run(args: List[String]): ZIO[ZEnv, Nothing, ExitCode] =
     ???
 }
-
+@silent
 object InterviewGeneric extends App {
 
   val questions =

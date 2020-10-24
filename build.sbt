@@ -126,6 +126,11 @@ lazy val coreJVM = core.jvm
   .settings(dottySettings)
   .settings(replSettings)
   .settings(mimaSettings(failOnProblem = true))
+  .settings(
+    libraryDependencies ++= Seq(
+      "io.lemonlabs" %% "scala-uri" % "1.4.1"
+    )
+  )
 
 lazy val coreJS = core.js
   .settings(jsSettings)
