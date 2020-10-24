@@ -24,6 +24,7 @@ import com.github.ghik.silencer.silent
 import zio.Fiber.Status
 import zio._
 import zio.internal.FiberContext.FiberRefLocals
+import zio.internal.debugging.Debugger.BreakType
 import zio.internal.debugging.{ Debugger, FiberDiagnostics }
 import zio.internal.stacktracer.ZTraceElement
 import zio.internal.tracing.ZIOFn
@@ -631,10 +632,10 @@ private[zio] final class FiberContext[E, A](
                     curZio = push.bracket_(pop, zio.zio)
                   case ZIO.Tags.Break =>
                     val zio = curZio.asInstanceOf[ZIO.Break]
-                    if (zio.freezeAll)
-                      Debugger.freezeAll()
-                    else
-                      Debugger.freezeFiber(fiberId)
+                    zio.breakType match {
+                      case BreakType.All   => Debugger.freezeAll(fiberId)
+                      case BreakType.Fiber => Debugger.freezeFiber(fiberId)
+                    }
                     curZio = nextInstr(())
                 }
               }

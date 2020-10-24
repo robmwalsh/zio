@@ -7,44 +7,40 @@ import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
 
 import scala.collection.mutable.ListBuffer
-import scala.io.{ Source, StdIn }
+import scala.io.StdIn
 import scala.util.Try
 
 object Debugger {
 
+  //todo check debugging is supported and is running (-agentlib:jdwp)
   lazy val debuggingEnabled: Boolean = true
 
+  //flag if debugger is active (i.e. something is frozen)
   @volatile
-  private var debuggerRunning = false
+  private var debuggerActive = false
 
   //flag if all fibers should freeze
   @volatile
-  private[this] var frozen: Boolean = false
+  private[this] var frozen: Boolean  = false
+  private[zio] def isFrozen: Boolean = frozen //todo do I need to copy this?
 
   private[this] type FiberSet     = ConcurrentHashMap.KeySetView[Long, lang.Boolean]
   private[this] type FrozenFibers = ConcurrentHashMap[Long, FiberDiagnostics]
-  private[this] type TraceSources = ConcurrentHashMap[ZTraceElement, String]
 
   //fibers that must freeze
   private[this] lazy val freezeFibers: FiberSet = ConcurrentHashMap.newKeySet[Long](100)
-
-  //trace sources
-  private[this] lazy val traceSourceSnippets: TraceSources = new TraceSources(10)
-  private[this] lazy val traceSourceLines: TraceSources    = new TraceSources(10)
-
   //fibers that have been frozen
   private[this] lazy val frozenFibers: FrozenFibers = new FrozenFibers(10)
-
   //fibers that can run when debugger has frozen
   private[this] lazy val permittedFibers: FiberSet = ConcurrentHashMap.newKeySet[Long](100)
 
-  private[zio] def isFrozen: Boolean = frozen
-
-  private[zio] def freezeAll(): Unit = {
-    debugLoop()
+  private[zio] def freezeAll(id: Fiber.Id): Unit = {
     frozen = true
+    Thread.sleep(100)
+    debugLoop(id.seqNumber)
   }
 
+  //todo fix
   lazy val sources = s"${System.getProperty("user.home")}/IdeaProjects/zio/core/shared/src/main/scala/"
 
   def colored(code: String)(str: String): String = s"$code$str${Console.RESET}"
@@ -61,61 +57,6 @@ object Debugger {
       trimmed + padding
     } else " " * n
 
-  private def sourceLine(trace: ZTraceElement): String = {
-    val res = traceSourceLines.get(trace)
-    if (res eq null) {
-      val _    = sourceSnippet(trace)
-      val res2 = traceSourceLines.get(trace)
-      if (res2 eq null) "something broke" else res2
-    } else
-      res
-
-  }
-  private def sourceSnippet(trace: ZTraceElement): String = {
-    val res = traceSourceSnippets.get(trace)
-    if (res eq null) {
-      val v = trace match {
-        case ZTraceElement.NoLocation(_) => trace.prettyPrint
-        case ZTraceElement.SourceLocation(sourceFile, clazz, _, from, to) =>
-          val fileName = sources + clazz.split('.').dropRight(1).mkString("/") + "/" + sourceFile
-          Try(Source.fromFile(fileName)).fold(
-            _ => s"$sourceFile not found",
-            file =>
-              Try("" :: file.getLines().toList).fold(
-                _ => "something broke",
-                fileLines => {
-                  file.close()
-                  val zipped    = fileLines.zipWithIndex.drop(1)
-                  val start     = from - 3
-                  val length    = to - from
-                  val lineCount = fileLines.length
-
-                  val drop = if (from > 3) start else 0
-                  val take =
-                    if (length > 10) 10
-                    else if (length + 3 > lineCount) lineCount - to
-                    else length + 6
-
-                  val limit = zipped.slice(drop, drop + take)
-                  val result = limit.map { case (rawLine, lineNumber) =>
-                    val line = s"$lineNumber ${if (lineNumber == from) "-> " else "   "} $rawLine"
-                    if (lineNumber == from) traceSourceLines.put(trace, rawLine.trim)
-                    if (from <= lineNumber && lineNumber <= to)
-                      green(line)
-                    else line
-                  }
-                  result.mkString("\n")
-                }
-              )
-          )
-      }
-      traceSourceSnippets.put(trace, v)
-      v
-    } else {
-      res
-    }
-  }
-
   sealed trait Mode
   object Mode {
     final case object Overview        extends Mode
@@ -127,12 +68,13 @@ object Debugger {
   private def flush(): Unit =
     println(nls)
 
-  private def debugLoop() =
-    if (!debuggerRunning) {
+  private def debugLoop(id: Long) =
+    if (!debuggerActive) {
+      Mode.Fiber(id)
       new Thread {
         override def run: Unit = {
           var done = false
-          while (!done) {
+          while (!done && !Thread.currentThread().isInterrupted) {
             mode match {
               case Mode.Overview =>
                 val list = new ListBuffer[FiberDiagnostics]()
@@ -140,6 +82,7 @@ object Debugger {
                   val _ = list += diagnostics
                 }
                 flush()
+                println("FrozenFibers:")
                 list
                   .sortBy(_.fiberId.seqNumber)
                   .foreach { diagnostic =>
@@ -148,7 +91,14 @@ object Debugger {
                     val v = s" v: ${red(
                       exactlyN(diagnostic.value.toString, 10)
                     )}"
-                    val source = s"${exactlyN(sourceLine(diagnostic.kTrace), 100)}"
+                    val source =
+                      s"${exactlyN(
+                        SourceHelper.getTraceSourceHead(diagnostic.kTrace) match {
+                          case Some(line) => line.line.trim
+                          case None       => "source not found"
+                        },
+                        100
+                      )}"
                     val location = s" ${green(diagnostic.kTrace match {
                       case ZTraceElement.NoLocation(error)                   => error
                       case ZTraceElement.SourceLocation(file, _, _, from, _) => s"($file:$from)"
@@ -185,18 +135,24 @@ object Debugger {
                 }
             }
           }
-          debuggerRunning = false
+          debuggerActive = false
+          unfreezeAll()
         }
       }.start()
     }
 
   private def printDetail(diagnostics: FiberDiagnostics) = {
     val value = red(exactlyN(diagnostics.value.toString, 100))
+    val source = SourceHelper.getTraceSource(diagnostics.kTrace, 0) match { //todo show context
+      case Some(list) =>
+        list.map(line => s"${line.lineNumber} ${line.line}").mkString("\n") //todo support windows
+      case None => "source not found"
+    }
     flush()
     println(s"fiberId         : ${diagnostics.fiberId}")
     println(s"value           : ${value}")
     println(s"location        : ${green(diagnostics.kTrace.prettyPrint)}")
-    println(sourceSnippet(diagnostics.kTrace))
+    println(source)
   }
 
   private[zio] def unfreezeAll(): Unit = {
@@ -223,9 +179,9 @@ object Debugger {
   private[zio] def executionPermitted(fiberId: Fiber.Id): Boolean = permittedFibers.contains(fiberId)
 
   private[zio] def freezeFiber(fiberId: Fiber.Id): Unit = {
-    debugLoop()
     permittedFibers.remove(fiberId)
     val _ = freezeFibers.add(fiberId.seqNumber)
+    debugLoop(fiberId.seqNumber)
   }
 
   private[zio] def freezeEvaluation(diagnostics: FiberDiagnostics): Unit = {
@@ -233,4 +189,9 @@ object Debugger {
     val _ = freezeFibers.remove(diagnostics.fiberId.seqNumber)
   }
 
+  sealed trait BreakType
+  object BreakType {
+    final case object All   extends BreakType
+    final case object Fiber extends BreakType
+  }
 }

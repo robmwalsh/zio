@@ -21,9 +21,9 @@ import scala.collection.mutable.Builder
 import scala.concurrent.ExecutionContext
 import scala.reflect.ClassTag
 import scala.util.{ Failure, Success }
-
 import zio.clock.Clock
 import zio.duration._
+import zio.internal.debugging.Debugger.BreakType
 import zio.internal.tracing.{ ZIOFn, ZIOFn1, ZIOFn2 }
 import zio.internal.{ Executor, Platform }
 import zio.{ TracingStatus => TracingS }
@@ -2276,8 +2276,8 @@ object ZIO extends ZIOCompanionPlatformSpecific {
       })
     )
 
-  final def break(all: Boolean): ZIO[Any, Nothing, Unit] =
-    new ZIO.Break(all)
+  final def break(breakType: BreakType): ZIO[Any, Nothing, Unit] =
+    new ZIO.Break(breakType)
 
   /**
    * Checks the interrupt status, and produces the effect returned by the
@@ -4391,7 +4391,7 @@ object ZIO extends ZIOCompanionPlatformSpecific {
     override def tag = Tags.OverrideForkScope
   }
 
-  private[zio] final class Break(val freezeAll: Boolean) extends ZIO[Any, Nothing, Unit] {
+  private[zio] final class Break(val breakType: BreakType) extends ZIO[Any, Nothing, Unit] {
     override def tag = Tags.Break
   }
 

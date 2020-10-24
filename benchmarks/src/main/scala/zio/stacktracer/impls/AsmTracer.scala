@@ -47,7 +47,7 @@ final class AsmTracer extends Tracer {
 
         reader.accept(cv, 0)
 
-        SourceLocation(cv.sourcefile, name, "apply", cv.line)
+        SourceLocation(cv.sourcefile, name, "apply", cv.line, cv.line)
 
       case Success(replaceMethod) =>
         replaceMethod.setAccessible(true)
@@ -60,7 +60,7 @@ final class AsmTracer extends Tracer {
 
         val classString = sl.getImplClass.replace('/', '.')
 
-        SourceLocation(cv.sourcefile, classString, methodName, cv.line)
+        SourceLocation(cv.sourcefile, classString, methodName, cv.line, cv.line)
     }
   }
 

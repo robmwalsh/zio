@@ -1,6 +1,7 @@
 package asuperobviouspackage
 
 import zio.clock.Clock
+import zio.internal.debugging.Debugger.BreakType
 
 object LunchTime extends zio.App {
 
@@ -72,7 +73,7 @@ object LunchTime extends zio.App {
       _ <- a.feed.commit
       //_ <- sleep(1.millis)
       _ <- putStrLn(s"$a has been fed at $seatIdx")
-      _ <- ZIO.break(true)
+      _ <- ZIO.break(BreakType.All)
       _ <- t.vacateSeat(seatIdx).commit
       _ <- putStrLn(s"$a left seat $seatIdx")
     } yield ()

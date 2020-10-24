@@ -30,6 +30,7 @@ object ZTraceElement {
       extends ZTraceElement {
     def toStackTraceElement: StackTraceElement = new StackTraceElement(clazz, method, file, from)
     def prettyPrint: String                    = toStackTraceElement.toString
+    lazy val folder                            = clazz.split('.').dropRight(1).mkString("/") + "/" //todo windows support
   }
 
 }
