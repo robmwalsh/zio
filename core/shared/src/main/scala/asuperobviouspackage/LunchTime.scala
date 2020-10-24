@@ -73,7 +73,6 @@ object LunchTime extends zio.App {
       _ <- a.feed.commit
       //_ <- sleep(1.millis)
       _ <- putStrLn(s"$a has been fed at $seatIdx")
-      _ <- ZIO.break(BreakType.All)
       _ <- t.vacateSeat(seatIdx).commit
       _ <- putStrLn(s"$a left seat $seatIdx")
     } yield ()
@@ -89,23 +88,23 @@ object LunchTime extends zio.App {
   def run(args: List[String]): URIO[zio.ZEnv, ExitCode] = {
     val Attendees = 100
     val TableSize = 5
-
-    ZIO
-      .foreach(List.fill(Attendees)(Attendee.State.Starving))(starving =>
-        TRef
-          .make[Attendee.State](starving)
-          .map(Attendee(_))
-          .commit
-      )
-      .flatMap(attendees =>
-        TArray
-          .fromIterable(List.fill(TableSize)(false))
-          .map(Table)
-          .commit
-          .flatMap(table =>
-            feedStarving(table, attendees).orDie
-              .map(_ => ExitCode.success)
-          )
-      )
+    ZIO.break(BreakType.All) *>
+      ZIO
+        .foreach(List.fill(Attendees)(Attendee.State.Starving))(starving =>
+          TRef
+            .make[Attendee.State](starving)
+            .map(Attendee(_))
+            .commit
+        )
+        .flatMap(attendees =>
+          TArray
+            .fromIterable(List.fill(TableSize)(false))
+            .map(Table)
+            .commit
+            .flatMap(table =>
+              feedStarving(table, attendees).orDie
+                .map(_ => ExitCode.success)
+            )
+        )
   }
 }

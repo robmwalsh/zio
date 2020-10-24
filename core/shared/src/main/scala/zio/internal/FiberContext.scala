@@ -27,7 +27,7 @@ import zio.internal.FiberContext.FiberRefLocals
 import zio.internal.debugging.Debugger.BreakType
 import zio.internal.debugging.{ Debugger, FiberDiagnostics }
 import zio.internal.stacktracer.ZTraceElement
-import zio.internal.tracing.ZIOFn
+import zio.internal.tracing.ZIOFn.unwrap
 
 /**
  * An implementation of Fiber that maintains context necessary for evaluation.
@@ -90,20 +90,6 @@ private[zio] final class FiberContext[E, A](
   @noinline
   private[this] def inTracingRegion: Boolean =
     if (tracingStatus ne null) tracingStatus.peekOrElse(initialTracingStatus) else false
-
-  @noinline
-  private[this] def unwrap(lambda: AnyRef): AnyRef =
-    // This is a huge hot spot, hiding loop under
-    // the match allows a faster happy path
-    lambda match {
-      case fn: ZIOFn =>
-        var unwrapped = fn.underlying
-        while (unwrapped.isInstanceOf[ZIOFn]) {
-          unwrapped = unwrapped.asInstanceOf[ZIOFn].underlying
-        }
-        unwrapped
-      case _ => lambda
-    }
 
   @noinline
   private[this] def traceLocation(lambda: AnyRef): ZTraceElement = {
@@ -792,7 +778,8 @@ private[zio] final class FiberContext[E, A](
         fiberId,
         value,
         k,
-        traceLocation(k),
+        tracer.traceLocation(unwrap(k)),
+        tracer,
         stack,
         stackTrace.toReversedList,
         execTrace.toReversedList,

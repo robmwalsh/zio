@@ -25,7 +25,7 @@ import zio.ZIO
  * point to supplied user's code, instead of ZIO internals.
  *
  * NOTE: it being an `abstract class`, not trait is important as type casing
- * on class appears to be about 10 times faster in [[zio.internal.FiberContext.unwrap]]
+ * on class appears to be about 10 times faster in [[ZIOFn#unwrap]]
  * hot-spot.
  */
 private[zio] abstract class ZIOFn extends Serializable {
@@ -59,4 +59,21 @@ private[zio] object ZIOFn {
   @noinline
   def recordStackTrace[R, E, A](lambda: AnyRef)(zio: ZIO[R, E, A]): ZIO[R, E, A] =
     zio.map(ZIOFn(lambda)(ZIO.identityFn))
+
+  /**
+   * unwraps the ZioFn to find the underlying user function
+   */
+  @noinline
+  def unwrap(lambda: AnyRef): AnyRef =
+    // This is a huge hot spot, hiding loop under
+    // the match allows a faster happy path
+    lambda match {
+      case fn: ZIOFn =>
+        var unwrapped = fn.underlying
+        while (unwrapped.isInstanceOf[ZIOFn]) {
+          unwrapped = unwrapped.asInstanceOf[ZIOFn].underlying
+        }
+        unwrapped
+      case _ => lambda
+    }
 }

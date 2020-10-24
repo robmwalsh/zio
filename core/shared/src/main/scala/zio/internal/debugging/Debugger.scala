@@ -5,12 +5,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
+import zio.internal.tracing.ZIOFn.unwrap
 
 import scala.collection.mutable.ListBuffer
 import scala.io.StdIn
 import scala.util.Try
 
 object Debugger {
+
+  import SourceHelper._
 
   //todo check debugging is supported and is running (-agentlib:jdwp)
   @volatile
@@ -45,10 +48,14 @@ object Debugger {
   lazy val sources = s"${System.getProperty("user.home")}/IdeaProjects/zio/core/shared/src/main/scala/"
 
   def colored(code: String)(str: String): String = s"$code$str${Console.RESET}"
+  lazy val black: String => String               = colored(Console.BLACK)
   lazy val red: String => String                 = colored(Console.RED)
   lazy val green: String => String               = colored(Console.GREEN)
   lazy val yellow: String => String              = colored(Console.YELLOW)
+  lazy val blue: String => String                = colored(Console.BLUE)
+  lazy val magenta: String => String             = colored(Console.MAGENTA)
   lazy val cyan: String => String                = colored(Console.CYAN)
+  lazy val white: String => String               = colored(Console.WHITE)
 
   def exactlyN(string: String, n: Int): String =
     if (!string.isEmpty) {
@@ -94,7 +101,7 @@ object Debugger {
                     val source =
                       green(
                         exactlyN(
-                          SourceHelper.getTraceSourceHead(diagnostic.kTrace) match {
+                          getTraceSourceHead(diagnostic.kTrace) match {
                             case Some(line) => line.line.trim
                             case None       => "source not found"
                           },
@@ -150,8 +157,9 @@ object Debugger {
     }
 
   private def printDetail(diagnostics: FiberDiagnostics) = {
+
     val value = red(exactlyN(diagnostics.value.toString, 100))
-    val source = SourceHelper.getTraceSource(diagnostics.kTrace, 0) match { //todo show context
+    val source = getTraceSource(diagnostics.kTrace, 0) match { //todo show context
       case Some(list) =>
         list.map(line => s"${line.lineNumber} ${line.line}").mkString("\n") //todo support windows
       case None => "source not found"
@@ -159,12 +167,57 @@ object Debugger {
     flush()
     println(s"fiberId         : ${diagnostics.fiberId}")
     println(s"value           : ${value}")
-    println(s"location        : ${green(diagnostics.kTrace.prettyPrint)}")
+
+    val execTrace = diagnostics.execTrace.take(15).map { trace =>
+      val source =
+        exactlyN(
+          getTraceSourceHead(trace) match {
+            case Some(line) => line.line.trim
+            case None       => "source not found"
+
+          },
+          100
+        )
+
+      val location = trace match {
+        case ZTraceElement.NoLocation(error)                   => red(error)
+        case ZTraceElement.SourceLocation(file, _, _, from, _) => green(s"($file:$from)")
+      }
+      s"$source$location"
+    }
+    println()
+    println(green("execution trace:"))
+    println(execTrace.mkString("\n")) //todo support windows
+
+    println
+    println(s"${red("next")}: ${green(diagnostics.kTrace.prettyPrint)}")
     println(source)
 
-    val peekStack = diagnostics.stack.peekN(10)
-    val _         = peekStack.length + 2
-    println(peekStack) //todo trace the stack lines
+    println
+    println(green("stack:"))
+
+    val peekStack = diagnostics.stack
+      .peekN(5)
+      .map { lambda =>
+        diagnostics.tracer.traceLocation(unwrap(lambda))
+      }
+      .map { trace =>
+        val source =
+          exactlyN(
+            getTraceSourceHead(trace) match {
+              case Some(line) => line.line.trim
+              case None       => "source not found"
+            },
+            100
+          )
+        val location = trace match {
+          case ZTraceElement.NoLocation(error)                   => red(error)
+          case ZTraceElement.SourceLocation(file, _, _, from, _) => green(s"($file:$from)")
+        }
+        s"$source$location"
+      }
+
+    println(peekStack.mkString("\n")) //todo support windows
   }
 
   private[zio] def unfreezeAll(): Unit = {

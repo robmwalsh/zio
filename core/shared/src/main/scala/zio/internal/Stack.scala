@@ -79,6 +79,7 @@ private[zio] final class Stack[A <: AnyRef]() {
       a.asInstanceOf[A]
     }
 
+  //not at all optimised, needs work if used in any hot spots
   private[zio] def peekN(n: Int): List[A] =
     if (stackSize <= 0) {
       Nil
