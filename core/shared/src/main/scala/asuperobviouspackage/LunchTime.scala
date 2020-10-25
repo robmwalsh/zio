@@ -88,23 +88,24 @@ object LunchTime extends zio.App {
   def run(args: List[String]): URIO[zio.ZEnv, ExitCode] = {
     val Attendees = 100
     val TableSize = 5
-    ZIO.break(BreakType.All) *>
-      ZIO
-        .foreach(List.fill(Attendees)(Attendee.State.Starving))(starving =>
-          TRef
-            .make[Attendee.State](starving)
-            .map(Attendee(_))
-            .commit
-        )
-        .flatMap(attendees =>
-          TArray
-            .fromIterable(List.fill(TableSize)(false))
-            .map(Table)
-            .commit
-            .flatMap(table =>
+
+    ZIO
+      .foreach(List.fill(Attendees)(Attendee.State.Starving))(starving =>
+        TRef
+          .make[Attendee.State](starving)
+          .map(Attendee(_))
+          .commit
+      )
+      .flatMap(attendees =>
+        TArray
+          .fromIterable(List.fill(TableSize)(false))
+          .map(Table)
+          .commit
+          .flatMap(table =>
+            ZIO.break(BreakType.All) *>
               feedStarving(table, attendees).orDie
                 .map(_ => ExitCode.success)
-            )
-        )
+          )
+      )
   }
 }

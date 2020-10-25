@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
-import zio.internal.tracing.ZIOFn.unwrap
+//import zio.internal.tracing.ZIOFn.unwrap
 
 import scala.collection.mutable.ListBuffer
 import scala.io.StdIn
@@ -14,6 +14,7 @@ import scala.util.Try
 object Debugger {
 
   import SourceHelper._
+  import LayoutHelper._
 
   //todo check debugging is supported and is running (-agentlib:jdwp)
   @volatile
@@ -46,25 +47,6 @@ object Debugger {
 
   //todo fix
   lazy val sources = s"${System.getProperty("user.home")}/IdeaProjects/zio/core/shared/src/main/scala/"
-
-  def colored(code: String)(str: String): String = s"$code$str${Console.RESET}"
-  lazy val black: String => String               = colored(Console.BLACK)
-  lazy val red: String => String                 = colored(Console.RED)
-  lazy val green: String => String               = colored(Console.GREEN)
-  lazy val yellow: String => String              = colored(Console.YELLOW)
-  lazy val blue: String => String                = colored(Console.BLUE)
-  lazy val magenta: String => String             = colored(Console.MAGENTA)
-  lazy val cyan: String => String                = colored(Console.CYAN)
-  lazy val white: String => String               = colored(Console.WHITE)
-
-  def exactlyN(string: String, n: Int): String =
-    if (!string.isEmpty) {
-      val first   = string.linesIterator.next()
-      val trimmed = first.substring(0, Math.min(first.length(), n))
-      val delta   = n - trimmed.length
-      val padding = " " * delta
-      trimmed + padding
-    } else " " * n
 
   sealed trait Mode
   object Mode {
@@ -196,11 +178,12 @@ object Debugger {
     println
     println(green("stack:"))
 
-    val peekStack = diagnostics.stack
-      .peekN(5)
+    val peekStack = diagnostics.stackTrace
+      .take(10)
+      /*.peekN(5)
       .map { lambda =>
         diagnostics.tracer.traceLocation(unwrap(lambda))
-      }
+      }*/
       .map { trace =>
         val source =
           exactlyN(
