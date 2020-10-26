@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 import zio.Fiber
 import zio.internal.stacktracer.ZTraceElement
+import zio.internal.tracing.ZIOFn
 //import zio.internal.tracing.ZIOFn.unwrap
 
 import scala.collection.mutable.ListBuffer
@@ -61,7 +62,7 @@ object Debugger {
 
   private def debugLoop(id: Long) =
     if (!debuggerActive) {
-      Mode.Fiber(id)
+      mode = Mode.Fiber(id)
       new Thread {
         override def run: Unit = {
           var done = false
@@ -180,10 +181,6 @@ object Debugger {
 
     val peekStack = diagnostics.stackTrace
       .take(10)
-      /*.peekN(5)
-      .map { lambda =>
-        diagnostics.tracer.traceLocation(unwrap(lambda))
-      }*/
       .map { trace =>
         val source =
           exactlyN(

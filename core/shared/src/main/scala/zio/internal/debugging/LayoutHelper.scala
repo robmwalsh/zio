@@ -13,7 +13,7 @@ object LayoutHelper {
 
   def exactlyN(string: String, n: Int): String =
     if (!string.isEmpty) {
-      val first   = string.linesIterator.next()
+      val first   = string.lines().iterator().next()
       val trimmed = first.substring(0, Math.min(first.length(), n))
       val delta   = n - trimmed.length
       val padding = " " * delta

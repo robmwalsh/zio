@@ -71,7 +71,6 @@ object LunchTime extends zio.App {
                  }
       _ <- putStrLn(s"$a took seat $seatIdx")
       _ <- a.feed.commit
-      //_ <- sleep(1.millis)
       _ <- putStrLn(s"$a has been fed at $seatIdx")
       _ <- t.vacateSeat(seatIdx).commit
       _ <- putStrLn(s"$a left seat $seatIdx")
