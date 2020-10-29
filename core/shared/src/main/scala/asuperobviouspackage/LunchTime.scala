@@ -1,7 +1,6 @@
 package asuperobviouspackage
 
 import zio.clock.Clock
-import zio.internal.debugging.Debugger.BreakType
 
 object LunchTime extends zio.App {
 
@@ -85,7 +84,7 @@ object LunchTime extends zio.App {
     ZIO.foreachPar_(list)(attendee => feedAttendee(table, attendee))
 
   def run(args: List[String]): URIO[zio.ZEnv, ExitCode] = {
-    val Attendees = 100
+    val Attendees = 10
     val TableSize = 5
 
     ZIO
@@ -100,11 +99,7 @@ object LunchTime extends zio.App {
           .fromIterable(List.fill(TableSize)(false))
           .map(Table)
           .commit
-          .flatMap(table =>
-            ZIO.break(BreakType.All) *>
-              feedStarving(table, attendees).orDie
-                .map(_ => ExitCode.success)
-          )
+          .flatMap(table => feedStarving(table, attendees).orDie.exitCode)
       )
   }
 }

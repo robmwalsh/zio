@@ -16,6 +16,8 @@
 
 package zio
 
+import zio.internal.debugging.Debugger.BreakType
+
 /**
  * The entry point for a purely-functional application on the JVM.
  *
@@ -53,7 +55,7 @@ trait App extends BootstrapRuntime {
     try sys.exit(
       unsafeRun(
         for {
-          fiber <- run(args0.toList).fork
+          fiber <- ZIO.break(BreakType.All) *> run(args0.toList).fork
           _ <- IO.effectTotal(java.lang.Runtime.getRuntime.addShutdownHook(new Thread {
                  override def run() = {
                    val _ = unsafeRunSync(fiber.interrupt)

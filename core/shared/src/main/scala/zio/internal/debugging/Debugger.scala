@@ -27,7 +27,7 @@ object Debugger {
 
   //flag if all fibers should freeze
   @volatile
-  private[this] var frozen: Boolean  = false
+  private[this] var frozen: Boolean  = true
   private[zio] def isFrozen: Boolean = frozen //todo do I need to copy this?
 
   private[this] type FiberSet     = ConcurrentHashMap.KeySetView[Long, lang.Boolean]
@@ -173,29 +173,18 @@ object Debugger {
     println(execTrace.mkString("\n")) //todo support windows
 
     println
-    println(s"${red("next")}: ${green(diagnostics.kTrace.prettyPrint)}")
+    println(s"${red("next")} real: ${yellow(diagnostics.tracer.traceLocation(diagnostics.k).prettyPrint)} underlying ${green(diagnostics.kTrace.prettyPrint)}")
     println(source)
 
     println
     println(green("stack:"))
 
-    val peekStack = diagnostics.stackTrace
-      .take(10)
-      .map { trace =>
-        val source =
-          exactlyN(
-            getTraceSourceHead(trace) match {
-              case Some(line) => line.line.trim
-              case None       => "source not found"
-            },
-            100
-          )
-        val location = trace match {
-          case ZTraceElement.NoLocation(error)                   => red(error)
-          case ZTraceElement.SourceLocation(file, _, _, from, _) => green(s"($file:$from)")
-        }
-        s"$source$location"
-      }
+    val peekStack = diagnostics.stack.peekN(30).map { real =>
+      val realLocation       = diagnostics.tracer.traceLocation(real)
+      val underlyingLocation = diagnostics.tracer.traceLocation(ZIOFn.unwrap(real))
+
+      s"${yellow(exactlyN(realLocation.prettyPrint, 70))} ${green(exactlyN(underlyingLocation.prettyPrint, 70))}"
+    }
 
     println(peekStack.mkString("\n")) //todo support windows
   }
